@@ -82,7 +82,7 @@ pub fn ci() -> AnyResult<()> {
 /// # Errors
 /// Fails if any command fails
 ///
-pub fn coverage(devmode: bool) -> AnyResult<()> {
+pub fn coverage(devmode: bool, exclude_patterns: Vec<String>) -> AnyResult<()> {
     remove_dir("coverage")?;
     create_dir_all("coverage")?;
 
@@ -100,8 +100,7 @@ pub fn coverage(devmode: bool) -> AnyResult<()> {
     } else {
         ("lcov", "coverage/tests.lcov")
     };
-    cmd!(
-        "grcov",
+    let mut cmd_options = vec![
         ".",
         "--binary-path",
         "./target/debug/deps",
@@ -119,10 +118,17 @@ pub fn coverage(devmode: bool) -> AnyResult<()> {
         "xtask/*",
         "--ignore",
         "*/src/tests/*",
-        "-o",
-        file,
-    )
-    .run()?;
+    ];
+
+    for pattern in &exclude_patterns {
+        cmd_options.push("--ignore");
+        cmd_options.push(pattern);
+    }
+
+    cmd_options.push("-o");
+    cmd_options.push(file);
+
+    cmd("grcov", cmd_options).run()?;
     println!("ok.");
 
     println!("=== cleaning up ===");
@@ -263,15 +269,18 @@ pub fn main() -> AnyResult<()> {
     use clap::{AppSettings, Arg, Command};
     let cli = Command::new("xtask")
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(
-            Command::new("coverage").arg(
+        .subcommand(Command::new("coverage").args(vec![
                 Arg::new("dev")
                     .short('d')
                     .long("dev")
                     .help("generate an html report")
                     .takes_value(false),
-            ),
-        )
+                Arg::new("ignore")
+                    .long("ignore")
+                    .help("pattern to ignore in coverage")
+                    .multiple_values(true)
+                    .takes_value(true),
+                ]))
         .subcommand(Command::new("vars"))
         .subcommand(Command::new("ci"))
         .subcommand(Command::new("powerset"))
@@ -300,7 +309,14 @@ pub fn main() -> AnyResult<()> {
 
     let root = crate::ops::root_dir();
     let res = match matches.subcommand() {
-        Some(("coverage", sm)) => crate::tasks::coverage(sm.is_present("dev")),
+        Some(("coverage", sm)) => crate::tasks::coverage(
+            sm.is_present("dev"),
+            sm.get_many::<String>("ignore")
+                .into_iter()
+                .flatten()
+                .map(&String::to_string)
+                .collect::<Vec<_>>(),
+        ),
         Some(("vars", _)) => {
             println!("root: {root:?}");
             Ok(())
