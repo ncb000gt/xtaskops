@@ -3,6 +3,7 @@
 //!
 use crate::ops::{clean_files, confirm, remove_dir};
 use anyhow::{Context, Result as AnyResult};
+use clap::ArgAction;
 use derive_builder::Builder;
 use duct::cmd;
 use std::fs::create_dir_all;
@@ -125,10 +126,19 @@ pub fn coverage(devmode: bool, exclude_patterns: Vec<String>) -> AnyResult<()> {
         cmd_options.push(pattern);
     }
 
-    cmd_options.push("-o");
-    cmd_options.push(file);
+    cmd_options.append(&mut vec![
+        "--excl-line",
+        "GRCOV_EXCL_LINE",
+        "--excl-start",
+        "GRCOV_EXCL_START",
+        "--excl-stop",
+        "GRCOV_EXCL_STOP",
+        "-o",
+        file,
+    ]);
 
-    cmd("grcov", cmd_options).run()?;
+    cmd("grcov", cmd_options).run()
+    .context("This command can fail if grcov is not installed.\nInstall it by running 'cargo install grcov'")?;
     println!("ok.");
 
     println!("=== cleaning up ===");
@@ -266,20 +276,19 @@ pub fn install() -> AnyResult<()> {
 /// This function will return an error if any command failed
 #[cfg(feature = "clap")]
 pub fn main() -> AnyResult<()> {
-    use clap::{AppSettings, Arg, Command};
+    use clap::{Arg, Command};
     let cli = Command::new("xtask")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(Command::new("coverage").args(vec![
                 Arg::new("dev")
                     .short('d')
                     .long("dev")
                     .help("generate an html report")
-                    .takes_value(false),
+                    .number_of_values(0),
                 Arg::new("ignore")
                     .long("ignore")
                     .help("pattern to ignore in coverage")
-                    .multiple_values(true)
-                    .takes_value(true),
+                    .number_of_values(1)
+                    .action(ArgAction::Append),
                 ]))
         .subcommand(Command::new("vars"))
         .subcommand(Command::new("ci"))
@@ -291,7 +300,7 @@ pub fn main() -> AnyResult<()> {
                     .long("package")
                     .help("package to build")
                     .required(true)
-                    .takes_value(true),
+                    .number_of_values(1),
             ),
         )
         .subcommand(
@@ -301,7 +310,7 @@ pub fn main() -> AnyResult<()> {
                     .long("package")
                     .help("package to build")
                     .required(true)
-                    .takes_value(true),
+                    .number_of_values(1),
             ),
         )
         .subcommand(Command::new("docs"));
@@ -310,7 +319,7 @@ pub fn main() -> AnyResult<()> {
     let root = crate::ops::root_dir();
     let res = match matches.subcommand() {
         Some(("coverage", sm)) => crate::tasks::coverage(
-            sm.is_present("dev"),
+            sm.contains_id("dev"),
             sm.get_many::<String>("ignore")
                 .into_iter()
                 .flatten()
