@@ -61,8 +61,7 @@ impl CIBuilder {
 
         cmd("cargo", check_args.as_slice()).run()?;
         cmd("cargo", clippy_args.as_slice()).run()?;
-        cmd!("cargo", "test").run()?;
-        cmd!("cargo", "test", "--doc").run()?;
+        cmd!("cargo", "nextest", "run").run()?;
         Ok(())
     }
 }
